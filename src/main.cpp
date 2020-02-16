@@ -453,7 +453,7 @@ boolean mqtt_reconnect()
   // Attempt to connect
   if (mqttClient.connect(mqttClientId, mqtt_user, mqtt_pass, mqtt_LWT_topic, 1, true, "Offline"))
   {
-    Sprintln("connected");
+    Sprintln("MQTT server  connected");
     // Once connected, publish an "Online" announcement...
     mqttClient.publish(mqtt_LWT_topic, "Online");
     Sprintln("Online message published on LWT topic");
@@ -769,7 +769,7 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
         itoa(l, buf, 10);
         strcat((char *)pwr_msg, (char *)buf);
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        strcat(pwr_msg, "\":{\"PWRDETECT\":"); 
+        strcat(pwr_msg, "\":{\"PWRdetected\":"); 
         char reading_buf[4];
         itoa(pwr_detect_last_reading[i]?1:0,reading_buf,10); 
         strcat((char *)pwr_msg, (char *)reading_buf);
