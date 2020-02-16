@@ -207,6 +207,7 @@ boolean reconnect();
 // const char willTopic[] = "arduino/will";
 const char *mqtt_LWT_topic = "tele/ardu_m_heating_temp_hum/LWT";
 const char *mqtt_sensor_topic = "tele/ardu_m_heating_temp_hum/SENSOR";
+const char *mqtt_power_detection_sensor_topic = "cmnd/ardu_m_heating_temp_hum/POWERDETECT";
 const char *mqtt_set_reporting_iterval_topic = "cmnd/ardu_m_heating_temp_hum/INTERVAL";
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -224,7 +225,7 @@ const char *mqtt_set_reporting_iterval_topic = "cmnd/ardu_m_heating_temp_hum/INT
 OneWire ds18x20[] = {22, 23, 24, 25, 26};
 const int oneWireCount = sizeof(ds18x20) / sizeof(OneWire);//! ??? не трябва ли за всяка шиnа по отделно??????
 DallasTemperature ds18x20_sensor_bus[oneWireCount];
-int num_devices_per_bus[oneWireCount][1];
+int num_DS18X20_devices_per_bus[oneWireCount][1]; //???? NOT USED ????
 // deviceCount = sensors.getDeviceCount();
 
 
@@ -239,6 +240,7 @@ int num_devices_per_bus[oneWireCount][1];
 #define DHTPIN3 5
 #define DHTPIN4 6
 #define MAX_NUMBER_OF_DHT_SENSORS 4
+const int num_DHT_attached = 2; //!   CHANGE THIS NUMBER WHEN ATTACHING DHT SENSORS TO THE CONTROLER!
 
 DHT dht[] = {
     {DHTPIN1, DHTTYPE},
@@ -246,18 +248,34 @@ DHT dht[] = {
     {DHTPIN3, DHTTYPE},
     {DHTPIN4, DHTTYPE},
 };
-int num_DHT_attached = 1; //!   CHANGE THIS NUMBER WHEN ATTACHING DHT SENSORS TO THE CONTROLER!
 
-float dht_humidity[4];
-float dht_temperature[4];
+float dht_humidity[num_DHT_attached];
+float dht_temperature[num_DHT_attached];
 
+// POWER DETECTION (220V) sensors
+const boolean PowerDetected = true; // button connects to GND
+const int Num_pwr_detect_sensors =4;
+int pwr_detect_pins[] = {7,8,9,11};
+bool pwr_detect_last_reading[Num_pwr_detect_sensors]={false,false,false,false};
+
+void read_Power_Detection_Sensors();
 void mqtt_publish_message(char *out_topic, char *payload);
 void printAddress(DeviceAddress deviceAddress);
 
+//********************************
+// *********** SETUP *************
 void setup(void)
 {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
+  
+  // INIT POWER DETECTION (220V) SENSOR PINS
+  for (size_t i = 0; i < Num_pwr_detect_sensors; i++)
+  {
+    pinMode(i,INPUT);
+  }
+  
+
   // start serial port
   // Open serial communications and wait for port to open:
   Sbegin(115200);
@@ -329,6 +347,9 @@ void setup(void)
   }
 }
 
+
+//********************************
+// *********** LOOP *************
 void loop(void)
 {
   ////////////////////////////////////////////////////
@@ -337,6 +358,10 @@ void loop(void)
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // MQTT connection maintenance:
   mqtt_maintain();
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // READ POWER DETECTION (220V) SENSOR PINS
+  read_Power_Detection_Sensors();
+
   /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   unsigned long now = millis();
@@ -648,7 +673,7 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
 
   void dht_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
 
-    for (int i = 0; i < MAX_NUMBER_OF_DHT_SENSORS; i++)
+    for (int i = 0; i < num_DHT_attached; i++)
     {
       dht_temperature[i] = dht[i].readTemperature();
       dht_humidity[i] = dht[i].readHumidity();
@@ -667,14 +692,12 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
       if (isnan(dht_temperature[i]) || isnan(dht_humidity[i]))
       {
         //TODO What to do if there is false reading????????????????????
-        //? JUST SKIP IT?
+        //? JUST SKIP IT? THIS WILL POP A MESSAGE IN OPENHAB LOG...
       }
       else
       {
-        if (ds18xb20_found)
-        {
-          strcat(stat_msg, ",");
-        }
+        if (ds18xb20_found) strcat(stat_msg, ","); //Add comma if there are previous sensor readings in the stat_message
+
         strcat(stat_msg, "\"DHT_");
         char buf[4];   // "-32\0"
         int l = i + 1; // make the DHT naming 1 based (not zero based)
@@ -722,3 +745,47 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
       }
     }
   }
+
+  void read_Power_Detection_Sensors(){
+  bool publish_now=false;
+  for (size_t i = 0; i < Num_pwr_detect_sensors; i++)
+  {
+    boolean sensor_reading = (digitalRead(i)==HIGH);
+    if (sensor_reading != pwr_detect_last_reading[i])
+    {
+     pwr_detect_last_reading[i] = sensor_reading;
+     publish_now=true;
+    }
+  }
+    if (publish_now || loop_first_pass)
+    {
+      char pwr_msg[128] = {"{"};  // Open the mqtt STAT message curly brackets 
+      
+      for (size_t i = 0; i < Num_pwr_detect_sensors; i++){
+        strcat(pwr_msg, "\"PWR_");
+        char buf[4];   // "-32\0"
+        int l = i + 1; // make the POWER sensor naming 1 based (not zero based)
+        itoa(l, buf, 10);
+        strcat((char *)pwr_msg, (char *)buf);
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        strcat(pwr_msg, "\":{\"PWRDETECT\":"); 
+        char reading_buf[4];
+        itoa(pwr_detect_last_reading[i]?1:0,reading_buf,10); 
+        strcat((char *)pwr_msg, (char *)reading_buf);
+        strcat(pwr_msg, "}");/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        //strcat(pwr_msg, "\",");
+        if (i != Num_pwr_detect_sensors-1)
+        {
+        strcat(pwr_msg, ",");
+        }
+
+      }
+        strcat(pwr_msg, "}");
+      mqtt_publish_message((char *)mqtt_power_detection_sensor_topic, (char *)pwr_msg); 
+      //Sprintln(pwr_msg);
+
+    }
+    
+  }
+   
+
