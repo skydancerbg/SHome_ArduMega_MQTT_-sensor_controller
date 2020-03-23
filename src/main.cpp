@@ -154,7 +154,7 @@ const long mqtt_reconect_interval = 5000;    // 5 seconds ds18x20
 unsigned long ds18x20_Read_delay = 800;  // 750 ms are required for the sensors to prepare the reading
 //reading 5 ds18x20 ad one DGT_22 takes 2036 ms plus 800 ms for requesting readout for ds18x20
 // unsigned long mqtt_msgs_interval_millis = 30000-800-2036;  //! DEFAULT REPORTING INTERVAL I SET TO ARROUND 30 SECONDS (recirculation pump control reqires short reporting intrval)
-unsigned long mqtt_msgs_interval_millis = 60000;  //! DEFAULT REPORTING INTERVAL I SET TO ARROUND 30 SECONDS (recirculation pump control reqires short reporting intrval)
+unsigned long mqtt_msgs_interval_millis = 30000;  //! DEFAULT REPORTING INTERVAL I SET TO ARROUND 30 SECONDS (recirculation pump control reqires short reporting intrval)
 // unsigned long ds18x20_perform_reading_millis=0;
 bool ds18x20_perform_reading = false;
 bool loop_first_pass = true;
@@ -222,7 +222,9 @@ const char *mqtt_set_reporting_iterval_topic = "cmnd/ardu_m_heating_temp_hum/INT
 // Available pins:
 
 // OneWire ds18x20[] = { 22,23,24,25,26,27,28,29,30,31 };
-OneWire ds18x20[] = {22, 23, 24, 25, 26};
+// OneWire ds18x20[] = {22, 23, 24, 25, 26};
+// OneWire ds18x20[] = {26, 28, 30, 32, 34,36,38,40};
+OneWire ds18x20[] = {26, 28, 30, 32, 40, 38, 36, 34};
 const int oneWireCount = sizeof(ds18x20) / sizeof(OneWire);//! ??? не трябва ли за всяка шиnа по отделно??????
 DallasTemperature ds18x20_sensor_bus[oneWireCount];
 int num_DS18X20_devices_per_bus[oneWireCount][1]; //???? NOT USED ????
@@ -235,22 +237,22 @@ int num_DS18X20_devices_per_bus[oneWireCount][1]; //???? NOT USED ????
 
 //! WARNING ATTACH DHT SENSORS TO THE PINS IN THIS ORDER:
 //! MAX NUMBER OF DHT SENSORS IS 4 - MORE REQUIRES CHANGE BELOW!
-#define DHTPIN1 2   
-#define DHTPIN2 3
-#define DHTPIN3 5
-#define DHTPIN4 6
-#define MAX_NUMBER_OF_DHT_SENSORS 4
-const int num_DHT_attached = 2; //!   CHANGE THIS NUMBER WHEN ATTACHING DHT SENSORS TO THE CONTROLER!
+#define DHTPIN1 22   
+#define DHTPIN2 23
+#define DHTPIN3 24
+// #define DHTPIN4 6
+#define MAX_NUMBER_OF_DHT_SENSORS 3
+const int num_DHT_attached = 1; //!   CHANGE THIS NUMBER WHEN ATTACHING DHT SENSORS TO THE CONTROLER!
 
 DHT dht[] = {
     {DHTPIN1, DHTTYPE},
     {DHTPIN2, DHTTYPE},
     {DHTPIN3, DHTTYPE},
-    {DHTPIN4, DHTTYPE},
+    // {DHTPIN4, DHTTYPE},
 };
 
-float dht_humidity[num_DHT_attached];
-float dht_temperature[num_DHT_attached];
+float dht_humidity[MAX_NUMBER_OF_DHT_SENSORS];
+float dht_temperature[MAX_NUMBER_OF_DHT_SENSORS];
 
 // POWER DETECTION (220V) sensors
 const boolean PowerDetected = true; // button connects to GND
@@ -673,7 +675,6 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
 }
 
   void dht_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
-
     for (int i = 0; i < num_DHT_attached; i++)
     {
       dht_temperature[i] = dht[i].readTemperature();
@@ -690,13 +691,16 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
     }
     for (int i = 0; i < MAX_NUMBER_OF_DHT_SENSORS; i++)
     {
-      if (isnan(dht_temperature[i]) || isnan(dht_humidity[i]))
-      {
-        //TODO What to do if there is false reading????????????????????
-        //? JUST SKIP IT? THIS WILL POP A MESSAGE IN OPENHAB LOG...
-      }
-      else
-      {
+      // if (isnan(dht_temperature[i]) || isnan(dht_humidity[i]))
+      // {
+      //   //TODO What to do if there is false reading????????????????????
+      //   //? JUST SKIP IT? THIS WILL POP A MESSAGE IN OPENHAB LOG...
+      //   Sprint(F("DHT sensor isnan "));
+      //   dht_temperature[i]=999;
+      //   dht_humidity[i]=999;
+      // }
+      // else
+      // {
         if (ds18xb20_found) strcat(stat_msg, ","); //Add comma if there are previous sensor readings in the stat_message
 
         strcat(stat_msg, "\"DHT_");
@@ -710,6 +714,9 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
               // strcat(stat_msg, "\":\"");
         // https://arduino.stackexchange.com/questions/16933/read-sensor-and-convert-reading-to-const-char
         char temBuffer[20]; // make sure this is big enough to hold your string
+
+        if (isnan(dht_temperature[i])) dht_temperature[i]=999;
+
         int IntegerPart = (int)(dht_temperature[i]);
         // https://forum.arduino.cc/index.php?topic=42403.0
         char str_t[20];
@@ -724,6 +731,9 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
               // strcat(stat_msg, "\":\"");
         // https://arduino.stackexchange.com/questions/16933/read-sensor-and-convert-reading-to-const-char
         char humBuffer[20]; // make sure this is big enough to hold your string
+
+        if (isnan(dht_humidity[i])) dht_humidity[i]=999;
+
         IntegerPart = (int)(dht_humidity[i]);
         // https://forum.arduino.cc/index.php?topic=42403.0
         char str_h[20];
@@ -743,49 +753,49 @@ void ds18x20_Read_All_Temperatures(char *stat_msg, bool &ds18xb20_found){
         Sprint(i+1);
         Sprint(" ");
         Sprintln(dht_humidity[i]);
-      }
+      
     }
   }
 
   void read_Power_Detection_Sensors(){
-  bool publish_now=false;
-  for (size_t i = 0; i < Num_pwr_detect_sensors; i++)
-  {
-    boolean sensor_reading = (digitalRead(i)==HIGH);
-    if (sensor_reading != pwr_detect_last_reading[i])
-    {
-     pwr_detect_last_reading[i] = sensor_reading;
-     publish_now=true;
-    }
-  }
-    if (publish_now || loop_first_pass)
-    {
-      char pwr_msg[128] = {"{"};  // Open the mqtt STAT message curly brackets 
+//   bool publish_now=false;
+//   for (size_t i = 0; i < Num_pwr_detect_sensors; i++)
+//   {
+//     boolean sensor_reading = (digitalRead(i)==HIGH);
+//     if (sensor_reading != pwr_detect_last_reading[i])
+//     {
+//      pwr_detect_last_reading[i] = sensor_reading;
+//      publish_now=true;
+//     }
+//   }
+//     if (publish_now || loop_first_pass)
+//     {
+//       char pwr_msg[128] = {"{"};  // Open the mqtt STAT message curly brackets 
       
-      for (size_t i = 0; i < Num_pwr_detect_sensors; i++){
-        strcat(pwr_msg, "\"PWR_");
-        char buf[4];   // "-32\0"
-        int l = i + 1; // make the POWER sensor naming 1 based (not zero based)
-        itoa(l, buf, 10);
-        strcat((char *)pwr_msg, (char *)buf);
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        strcat(pwr_msg, "\":{\"PWRdetected\":"); 
-        char reading_buf[4];
-        itoa(pwr_detect_last_reading[i]?1:0,reading_buf,10); 
-        strcat((char *)pwr_msg, (char *)reading_buf);
-        strcat(pwr_msg, "}");/////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        //strcat(pwr_msg, "\",");
-        if (i != Num_pwr_detect_sensors-1)
-        {
-        strcat(pwr_msg, ",");
-        }
+//       for (size_t i = 0; i < Num_pwr_detect_sensors; i++){
+//         strcat(pwr_msg, "\"PWR_");
+//         char buf[4];   // "-32\0"
+//         int l = i + 1; // make the POWER sensor naming 1 based (not zero based)
+//         itoa(l, buf, 10);
+//         strcat((char *)pwr_msg, (char *)buf);
+// /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//         strcat(pwr_msg, "\":{\"PWRdetected\":"); 
+//         char reading_buf[4];
+//         itoa(pwr_detect_last_reading[i]?1:0,reading_buf,10); 
+//         strcat((char *)pwr_msg, (char *)reading_buf);
+//         strcat(pwr_msg, "}");/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//         //strcat(pwr_msg, "\",");
+//         if (i != Num_pwr_detect_sensors-1)
+//         {
+//         strcat(pwr_msg, ",");
+//         }
 
-      }
-        strcat(pwr_msg, "}");
-      mqtt_publish_message((char *)mqtt_power_detection_sensor_topic, (char *)pwr_msg); 
-      //Sprintln(pwr_msg);
+//       }
+//         strcat(pwr_msg, "}");
+//       mqtt_publish_message((char *)mqtt_power_detection_sensor_topic, (char *)pwr_msg); 
+//       //Sprintln(pwr_msg);
 
-    }
+//     }
     
   }
    
